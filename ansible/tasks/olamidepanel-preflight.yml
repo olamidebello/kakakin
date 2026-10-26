@@ -19,7 +19,7 @@
       - "{{ playbook_dir }}/../server/olamidepanel-register.py"
       - --panel-root
       - "{{ kakakin_panel_root | default('/opt/olamidepanel') }}"
-    stdin: "{{ {'domain': kakakin_domain, 'owner': kakakin_panel_owner | default(''), 'mode': 'inspect'} | to_json }}"
+    stdin: "{{ {'domain': kakakin_domain, 'owner': kakakin_panel_owner | default(''), 'mode': 'inspect', 'allow_static': kakakin_repair | default(false) | bool} | to_json }}"
   register: kakakin_panel_inspect
   changed_when: false
 - name: Retain the resolved panel account

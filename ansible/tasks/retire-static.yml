@@ -1,0 +1,14 @@
+---
+- name: Back up and retire only the Kakakin static publisher request
+  ansible.builtin.command:
+    argv:
+      - "{{ kakakin_panel_root | default('/opt/olamidepanel') }}/venv/bin/python"
+      - "{{ playbook_dir }}/../server/olamidepanel-register.py"
+      - --panel-root
+      - "{{ kakakin_panel_root | default('/opt/olamidepanel') }}"
+    stdin: "{{ {'domain': kakakin_domain, 'owner': kakakin_panel_account.owner, 'mode': 'retire_static'} | to_json }}"
+  register: kakakin_static_retirement
+  changed_when: (kakakin_static_retirement.stdout | from_json).changed
+- name: Report the preserved static publisher snapshot
+  ansible.builtin.debug:
+    msg: "{{ (kakakin_static_retirement.stdout | from_json).backup | default('No active static request needed retirement.') }}"

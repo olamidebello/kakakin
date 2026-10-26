@@ -65,7 +65,7 @@ For a private GitHub repository, prepare a read-only deploy key/verified GitHub 
 6. Adds the domain to the selected panel account's Domains inventory using the existing panel database adapter, and records an audit event. Repeated runs do not duplicate the domain or audit entry.
 7. Saves `/etc/olamidepanel/apps/kakakin.json` as an operator manifest with the repository, deployed commit, owner, container, port, and health path. It is an operator record; the existing panel does not render an application-management GUI from this file.
 
-**Do not submit this domain to the panel's static Site Publisher.** Kakakin needs its running backend. If a static publisher job already exists, the integration stops before app deployment and leaves the existing job unchanged. Resolve that registration first. The integration does not update or restart the Olamidepanel application, replace MySQL, grant extra panel permissions, or modify other domains.
+**Do not submit this domain to the panel's static Site Publisher.** Kakakin needs its running backend. If a static publisher job already exists, ordinary deployment stops. Run `bash scripts/hard-fix.sh` for this exact Kakakin hostname to back up and retire that request automatically after DNS checks. It does not delete the domain, transfer its owner, or remove the saved static files. The integration does not update or restart the Olamidepanel application, replace MySQL, grant extra panel permissions, or modify other domains.
 
 ## Remote Ansible execution
 

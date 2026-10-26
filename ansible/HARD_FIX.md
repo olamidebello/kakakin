@@ -26,7 +26,7 @@ If local tracked edits prevent checkout, review them before proceeding; these co
 - Checks certificate hostname and validity. Missing, invalid, or near-expiry certificates are issued/renewed only after the DNS preflight; valid certificates are reused. Nginx is validated before reload.
 - Verifies the public backend identity and database readiness, then registers the domain in Olamidepanel and writes `/var/log/kakakin/hard-fix-report.json`.
 
-The process does not delete the old `.com` certificate, other domains, unrelated Nginx settings, application accounts, recipient consent records, or message history. It does not retry ambiguous completed/live campaign sends or weaken TLS verification. It does not overwrite an existing panel static Site Publisher request.
+The process does not delete the old `.com` certificate, other domains, unrelated Nginx settings, application accounts, recipient consent records, or message history. It does not retry ambiguous completed/live campaign sends or weaken TLS verification. In repair mode, an existing static Site Publisher request for this exact hostname is backed up under `/var/backups/kakakin/static-publisher/` and retired to `external_backend` after DNS checks. Domain ownership and static files remain intact; the request is retained in MySQL instead of being deleted. The publisher worker lock prevents an in-flight static provisioning job from racing the takeover. Ordinary deployments still stop on an active static request.
 
 ## If DNS cannot be repaired automatically
 

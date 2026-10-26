@@ -63,6 +63,9 @@
     - name: Diagnose and repair DNS before modifying the application
       ansible.builtin.include_tasks: tasks/repair-preflight.yml
       when: kakakin_repair | default(false) | bool
+    - name: Retire the conflicting static job after DNS preflight and a protected backup
+      ansible.builtin.include_tasks: tasks/retire-static.yml
+      when: kakakin_repair | default(false) | bool
   tasks:
     - name: Install deployment dependencies
       ansible.builtin.apt:
