@@ -1,0 +1,9 @@
+---
+# Targeted recovery; keeps accounts/data and repairs only Kakakin-owned resources.
+- name: Repair Kakakin on Olamidepanel
+  ansible.builtin.import_playbook: olamidepanel.yml
+  vars:
+    kakakin_repair: true
+    kakakin_domain: kakakin.africandroid.world
+    kakakin_public_ipv4: 154.16.170.86
+    kakakin_dns_auto: true

@@ -2,7 +2,7 @@
 # Run ON the existing Olamidepanel host. Secrets/passwords are never arguments.
 set -euo pipefail
 if [[ "${1:-}" == '--help' || "${1:-}" == '-h' ]]; then
-  echo "Usage: sudo bash $0 [--admin-email EMAIL] [--panel-owner USER] [--branch main] [--domain kakakin.africandroid.com] [--vars FILE]"
+  echo "Usage: sudo bash $0 [--admin-email EMAIL] [--panel-owner USER] [--branch main] [--domain kakakin.africandroid.world] [--vars FILE] [--repair]"
   echo 'Clones/updates /opt/kakakin-bootstrap, then runs ansible/pull-and-deploy.yml locally.'
   exit 0
 fi
@@ -16,6 +16,7 @@ esac
 revision='main'; forwarded=("$@")
 while (($#)); do
   case "$1" in
+    --repair) shift ;;
     --branch) revision="${2:?Missing branch/tag/commit}"; shift 2 ;;
     --admin-email|--panel-owner|--domain|--vars) [[ $# -ge 2 ]] || { echo "Missing value for $1" >&2; exit 64; }; shift 2 ;;
     *) echo "Unknown argument for local deployment: $1" >&2; exit 64 ;;
@@ -44,5 +45,5 @@ git -C "${checkout}" diff --quiet
 git -C "${checkout}" diff --cached --quiet
 git -C "${checkout}" fetch --depth=1 origin "${revision}"
 git -C "${checkout}" checkout --detach FETCH_HEAD
-printf 'Deploying Kakakin revision %s to kakakin.africandroid.com (unless overridden).\n' "$(git -C "${checkout}" rev-parse --short HEAD)"
+printf 'Deploying Kakakin revision %s to kakakin.africandroid.world (unless overridden).\n' "$(git -C "${checkout}" rev-parse --short HEAD)"
 exec bash "${checkout}/scripts/deploy-olamidepanel.sh" "${forwarded[@]}"

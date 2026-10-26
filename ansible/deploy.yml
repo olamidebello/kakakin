@@ -29,7 +29,7 @@
   pre_tasks:
     - name: Use the Kakakin production domain unless explicitly overridden
       ansible.builtin.set_fact:
-        kakakin_domain: kakakin.africandroid.com
+        kakakin_domain: kakakin.africandroid.world
       when: kakakin_domain is not defined
     - name: Prepare the existing panel integration
       ansible.builtin.include_tasks: tasks/olamidepanel-preflight.yml
@@ -60,10 +60,13 @@
           - "'\r' not in (item.value | string)"
       loop: "{{ kakakin_provider_env | dict2items }}"
       no_log: true
+    - name: Diagnose and repair DNS before modifying the application
+      ansible.builtin.include_tasks: tasks/repair-preflight.yml
+      when: kakakin_repair | default(false) | bool
   tasks:
     - name: Install deployment dependencies
       ansible.builtin.apt:
-        name: [git, docker.io, nginx, certbot, ca-certificates, python3]
+        name: [git, docker.io, nginx, certbot, ca-certificates, python3, openssl]
         state: present
         update_cache: true
         cache_valid_time: 3600
@@ -176,7 +179,7 @@
       changed_when: false
     - name: Determine whether application replacement is needed
       ansible.builtin.set_fact:
-        kakakin_replace: "{{ kakakin_old.rc != 0 or kakakin_environment.changed or (kakakin_old.rc == 0 and ((kakakin_old.stdout | from_json)[0].Config.Image != kakakin_image or (kakakin_old.stdout | from_json)[0].HostConfig.PortBindings.get('18770/tcp', [{}])[0].get('HostPort', '') != (kakakin_port | string))) }}"
+        kakakin_replace: "{{ kakakin_old.rc != 0 or kakakin_environment.changed or (kakakin_old.rc == 0 and ((kakakin_repair | default(false) | bool and (not (kakakin_old.stdout | from_json)[0].State.Running or (kakakin_old.stdout | from_json)[0].State.get('Health', {}).get('Status', '') == 'unhealthy')) or (kakakin_old.stdout | from_json)[0].Config.Image != kakakin_image or (kakakin_old.stdout | from_json)[0].HostConfig.PortBindings.get('18770/tcp', [{}])[0].get('HostPort', '') != (kakakin_port | string))) }}"
     - name: Deploy and verify the new container
       when: kakakin_replace | bool
       block:
@@ -238,6 +241,12 @@
         argv: [docker, start, kakakin]
       when: not (kakakin_replace | bool)
       changed_when: false
+    - name: Back up and repair exclusive duplicate Kakakin virtual hosts
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, "{{ playbook_dir }}/../server/repair-nginx.py", --domain, "{{ kakakin_domain }}", --backup-root, "{{ kakakin_backups }}"]
+      register: kakakin_nginx_repair
+      changed_when: (kakakin_nginx_repair.stdout | from_json).changed | default(false)
+      when: kakakin_repair | default(false) | bool
     - name: Check for domain conflicts in other Nginx site files
       ansible.builtin.command:
         argv:
@@ -248,7 +257,7 @@
             domain=sys.argv[1]
             conflicts=[]
             for folder in ['/etc/nginx/sites-enabled','/etc/nginx/conf.d']:
-              for p in pathlib.Path(folder).glob('*'):
+              for p in pathlib.Path(folder).glob('*.conf' if folder.endswith('/conf.d') else '*'):
                 if not p.is_file() or p.resolve()==pathlib.Path('/etc/nginx/sites-available/kakakin.conf'): continue
                 text=re.sub(r'#[^\n]*','',p.read_text(errors='replace'))
                 for names in re.findall(r'\bserver_name\s+([^;]+);',text):
@@ -260,9 +269,16 @@
       ansible.builtin.stat:
         path: "/etc/letsencrypt/live/{{ kakakin_domain }}/fullchain.pem"
       register: kakakin_cert
+    - name: Check the existing certificate's hostname and remaining validity
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, "{{ playbook_dir }}/../server/check-certificate.py", --file, "/etc/letsencrypt/live/{{ kakakin_domain }}/fullchain.pem", --domain, "{{ kakakin_domain }}", --seconds, '604800']
+      register: kakakin_certificate_check
+      failed_when: false
+      changed_when: false
+      when: kakakin_cert.stat.exists and kakakin_enable_tls
     - name: Select the initial Nginx TLS configuration
       ansible.builtin.set_fact:
-        kakakin_tls_ready: "{{ kakakin_enable_tls and kakakin_cert.stat.exists }}"
+        kakakin_tls_ready: "{{ kakakin_enable_tls and kakakin_cert.stat.exists and (kakakin_certificate_check.stdout | default('{}') | from_json).valid | default(false) }}"
     - name: Install this application's Nginx site
       ansible.builtin.template:
         src: nginx.conf.j2
@@ -283,10 +299,16 @@
       ansible.builtin.service:
         name: nginx
         state: reloaded
-    - name: Obtain the domain's Let's Encrypt certificate after DNS is ready
+    - name: Obtain or repair the domain certificate only when needed
       ansible.builtin.command:
-        argv: [certbot, certonly, --webroot, --webroot-path, /var/www/kakakin-acme, --non-interactive, --agree-tos, --email, "{{ kakakin_letsencrypt_email }}", --domain, "{{ kakakin_domain }}"]
-        creates: "/etc/letsencrypt/live/{{ kakakin_domain }}/fullchain.pem"
+        argv: "{{ ['certbot', 'certonly', '--webroot', '--webroot-path', '/var/www/kakakin-acme', '--non-interactive', '--agree-tos', '--email', kakakin_letsencrypt_email, '--cert-name', kakakin_domain, '--domain', kakakin_domain] + (['--force-renewal'] if kakakin_cert.stat.exists else []) }}"
+      when: kakakin_enable_tls and not (kakakin_tls_ready | bool)
+    - name: Verify the new or retained certificate before enabling HTTPS
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, "{{ playbook_dir }}/../server/check-certificate.py", --file, "/etc/letsencrypt/live/{{ kakakin_domain }}/fullchain.pem", --domain, "{{ kakakin_domain }}", --seconds, '0']
+      register: kakakin_final_certificate
+      failed_when: not (kakakin_final_certificate.stdout | from_json).valid
+      changed_when: false
       when: kakakin_enable_tls
     - name: Activate the verified TLS configuration
       ansible.builtin.set_fact:
@@ -337,6 +359,27 @@
     - name: Register the verified app with Olamidepanel
       ansible.builtin.include_tasks: tasks/olamidepanel-register.yml
       when: kakakin_olamidepanel | default(false) | bool
+    - name: Create a protected repair-report directory
+      ansible.builtin.file:
+        path: /var/log/kakakin
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      when: kakakin_repair | default(false) | bool
+    - name: Save the verified repair outcome without provider credentials
+      ansible.builtin.copy:
+        dest: /var/log/kakakin/hard-fix-report.json
+        owner: root
+        group: root
+        mode: '0600'
+        content: >-
+          {{ {'domain': kakakin_domain, 'revision': kakakin_git.after,
+          'url': ('https' if kakakin_enable_tls else 'http') + '://' + kakakin_domain,
+          'health': kakakin_public_health.json, 'dns_ready': true,
+          'nginx_cleanup': (kakakin_nginx_repair.stdout | default('{}') | from_json),
+          'backups': kakakin_backups, 'verified': true} | to_nice_json }}
+      when: kakakin_repair | default(false) | bool
     - name: Show the verified deployment URL
       ansible.builtin.debug:
         msg: "Kakakin ready at {{ 'https' if kakakin_enable_tls else 'http' }}://{{ kakakin_domain }} — administrator: {{ kakakin_admin_email }}. Existing provider credentials and consent checks still apply."

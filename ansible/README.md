@@ -1,14 +1,18 @@
 # Kakakin server deployment
 
+## Automatic repair for the corrected domain
+
+Use `bash scripts/hard-fix.sh` on the panel server to repair **kakakin.africandroid.world**. See [the repair guide](HARD_FIX.md) for the server commands and DNS prerequisites.
+
 This playbook pulls `https://github.com/olamidebello/kakakin.git`, builds the chosen revision, and runs Kakakin on one Debian/Ubuntu server. It does not deploy to Cloudflare or upload source to ChatGPT Sites.
 
 For the existing Olamidepanel host, use [OLAMIDEPANEL.md](OLAMIDEPANEL.md) and `scripts/deploy-olamidepanel.sh`. The general server playbook below does not register panel inventory.
 
 ## Production domain
 
-The deployment default is **kakakin.africandroid.com**. The wrapper also accepts `--domain` or `KAKAKIN_DOMAIN` for an explicit override.
+The deployment default is **kakakin.africandroid.world**. The wrapper also accepts `--domain` or `KAKAKIN_DOMAIN` for an explicit override.
 
-In the `africandroid.com` DNS zone, create an `A` record named `kakakin` pointing to your deployment server's public IPv4 address. Add an `AAAA` record only if the same server has working public IPv6. DNS must resolve to the target before Let's Encrypt can issue the certificate. This repository change does not modify DNS or deploy to a server.
+In the `africandroid.world` DNS zone, create an `A` record named `kakakin` pointing to your deployment server's public IPv4 address. Add an `AAAA` record only if the same server has working public IPv6. DNS must resolve to the target before Let's Encrypt can issue the certificate. This repository change does not modify DNS or deploy to a server.
 
 ## Requirements
 
@@ -29,7 +33,7 @@ sudo apt-get install -y git ansible-core
 git clone https://github.com/olamidebello/kakakin.git kakakin-bootstrap
 cd kakakin-bootstrap
 sudo bash scripts/deploy-server.sh \
-  --domain kakakin.africandroid.com \
+  --domain kakakin.africandroid.world \
   --admin-email YOUR_ADMIN_EMAIL
 ```
 
@@ -51,7 +55,7 @@ Use `--ask-become-pass` if your remote account needs an interactive sudo passwor
 Run the same command again. The default revision is `main`. To deploy a pinned release or commit:
 
 ```bash
-sudo bash scripts/deploy-server.sh --domain kakakin.africandroid.com --admin-email YOUR_ADMIN_EMAIL --branch YOUR_COMMIT_SHA
+sudo bash scripts/deploy-server.sh --domain kakakin.africandroid.world --admin-email YOUR_ADMIN_EMAIL --branch YOUR_COMMIT_SHA
 ```
 
 The playbook refuses to discard local checkout edits. It builds the image before stopping the old app. Before migration it stops Kakakin and makes a cold archive of the state and account configuration. It then starts the chosen image, waits for health, and verifies the domain through Nginx. An unchanged container is kept running. Other Nginx sites are preserved; a domain already configured elsewhere causes a clear failure instead of duplicate virtual hosts.
@@ -69,7 +73,7 @@ The playbook refuses to discard local checkout edits. It builds the image before
 | Nginx site | `/etc/nginx/sites-available/kakakin.conf` |
 | Docker container | `kakakin` |
 | Host application binding | `127.0.0.1:18770` |
-| Health check | `https://kakakin.africandroid.com/healthz` |
+| Health check | `https://kakakin.africandroid.world/healthz` |
 
 The container uses UID/GID 10001. Docker automatically restarts it after a host reboot. The application gateway runs the scheduler every 60 seconds independently of open browser tabs. Only explicitly authorized due campaigns are eligible, and all provider, consent, pause, and sending-limit checks remain enforced.
 
@@ -93,8 +97,8 @@ kakakin_provider_env:
 
 Pass it using `--vars /path/to/vault.yml` with the wrapper, or `--extra-vars @/path/to/vault.yml --ask-vault-pass` directly with Ansible. The wrapper supports non-encrypted vars files; use direct Ansible for interactive Vault password entry. Environment files are root-readable only. Provider secrets are not included in Docker images or browser responses. Configure the provider's public signed callback URLs after TLS is working:
 
-- Meta: `https://kakakin.africandroid.com/api/webhooks/meta`
-- Twilio: `https://kakakin.africandroid.com/api/webhooks/twilio`
+- Meta: `https://kakakin.africandroid.world/api/webhooks/meta`
+- Twilio: `https://kakakin.africandroid.world/api/webhooks/twilio`
 
 Do not enable live sending until provider approval/registration, template wording, consent evidence, and inbound opt-out callbacks have been tested. No live delivery is enabled merely by deployment.
 

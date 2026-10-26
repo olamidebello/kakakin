@@ -25,6 +25,26 @@
 - name: Retain the resolved panel account
   ansible.builtin.set_fact:
     kakakin_panel_account: "{{ kakakin_panel_inspect.stdout | from_json }}"
+- name: Recover the administrator email from the existing Kakakin configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import pathlib,re
+        p=pathlib.Path('/etc/kakakin/server.env')
+        value=''
+        if p.exists():
+          for line in p.read_text().splitlines():
+            if line.startswith('BOOTSTRAP_ADMIN_EMAIL='): value=line.partition('=')[2].strip()
+        print(value if re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+',value) else '')
+  register: kakakin_previous_admin
+  changed_when: false
+  when: kakakin_admin_email is not defined
+- name: Retain the existing application's administrator email during repair
+  ansible.builtin.set_fact:
+    kakakin_admin_email: "{{ kakakin_previous_admin.stdout | trim }}"
+  when: kakakin_admin_email is not defined and kakakin_previous_admin.stdout | default('') | trim | length > 0
 - name: Use the existing panel account email for initial Kakakin login unless overridden
   ansible.builtin.set_fact:
     kakakin_admin_email: "{{ kakakin_panel_account.email }}"

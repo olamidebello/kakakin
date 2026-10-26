@@ -1,0 +1,33 @@
+---
+- name: Check or provision only the selected Kakakin DNS record
+  ansible.builtin.command:
+    argv:
+      - "{{ (kakakin_panel_root | default('/opt/olamidepanel')) + '/venv/bin/python' if kakakin_olamidepanel | default(false) else '/usr/bin/python3' }}"
+      - "{{ playbook_dir }}/../server/repair-dns.py"
+    stdin: >-
+      {{ {'domain': kakakin_domain, 'ipv4': kakakin_public_ipv4 | default('154.16.170.86'),
+      'ipv6': kakakin_public_ipv6 | default([]), 'auto': kakakin_dns_auto | default(false),
+      'account_id': kakakin_namecheap_account_id | default(0),
+      'panel_root': kakakin_panel_root | default('/opt/olamidepanel')} | to_json }}
+  environment:
+    PANEL_DB_CONFIG: /etc/olamidepanel/database.json
+    PANEL_PAYMENT_KEY: /etc/olamidepanel/payment.key
+  register: kakakin_dns_repair
+  changed_when: (kakakin_dns_repair.stdout | from_json).changed | default(false)
+- name: Report an external DNS prerequisite before changing the running application
+  ansible.builtin.assert:
+    that:
+      - (kakakin_dns_repair.stdout | from_json).state != 'manual_required'
+    fail_msg: "{{ (kakakin_dns_repair.stdout | from_json).message }}"
+- name: Wait briefly for a provisioned DNS record to propagate without repeating DNS writes
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ playbook_dir }}/../server/repair-dns.py"
+    stdin: "{{ {'domain': kakakin_domain, 'ipv4': kakakin_public_ipv4 | default('154.16.170.86'), 'ipv6': kakakin_public_ipv6 | default([]), 'auto': false} | to_json }}"
+  register: kakakin_dns_wait
+  changed_when: false
+  until: (kakakin_dns_wait.stdout | from_json).ready | default(false)
+  retries: 12
+  delay: 10
+  when: not (kakakin_dns_repair.stdout | from_json).ready

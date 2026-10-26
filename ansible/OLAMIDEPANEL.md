@@ -1,10 +1,14 @@
 # Host Kakakin on Olamidepanel
 
-Target: **kakakin.africandroid.com**, on the existing Olamidepanel server **154.16.170.86** (`server.dobhrap.com`). This is a fresh Kakakin installation; it does not migrate data from the old panel server.
+## Automatic repair for the corrected domain
+
+Use `bash scripts/hard-fix.sh` on the panel server to repair **kakakin.africandroid.world**. See [the repair guide](HARD_FIX.md) for the server commands and DNS prerequisites.
+
+Target: **kakakin.africandroid.world**, on the existing Olamidepanel server **154.16.170.86** (`server.dobhrap.com`). This is a fresh Kakakin installation; it does not migrate data from the old panel server.
 
 ## DNS
 
-In the `africandroid.com` DNS zone, point `kakakin` to `154.16.170.86` with an A record. Only retain an AAAA record if that same server actually serves the app over IPv6. DNS changes are not performed by these scripts.
+In the `africandroid.world` DNS zone, point `kakakin` to `154.16.170.86` with an A record. Only retain an AAAA record if that same server actually serves the app over IPv6. DNS changes are not performed by these scripts.
 
 ## Automatic pull-and-deploy script
 
@@ -14,7 +18,7 @@ From an existing checkout, run:
 sudo bash scripts/pull-and-deploy.sh
 ```
 
-This root-only entry point requires the existing panel, installs missing Git/Ansible tools, clones or updates `/opt/kakakin-bootstrap`, checks out the selected revision without discarding tracked edits, and invokes `ansible/pull-and-deploy.yml`. It preserves the interactive first-install email/password prompts. Run it on `154.16.170.86`, not on your workstation. The deployment domain defaults to `kakakin.africandroid.com`.
+This root-only entry point requires the existing panel, installs missing Git/Ansible tools, clones or updates `/opt/kakakin-bootstrap`, checks out the selected revision without discarding tracked edits, and invokes `ansible/pull-and-deploy.yml`. It preserves the interactive first-install email/password prompts. Run it on `154.16.170.86`, not on your workstation. The deployment domain defaults to `kakakin.africandroid.world`.
 
 For a public repository, download the script to a file before running it so stdin remains available for prompts:
 
@@ -79,7 +83,7 @@ SSH authentication and verified host keys must already be available on the contr
 sudo docker logs --tail 100 kakakin
 sudo docker inspect --format '{{.State.Health.Status}}' kakakin
 sudo nginx -t
-curl -fsS https://kakakin.africandroid.com/healthz
+curl -fsS https://kakakin.africandroid.world/healthz
 ```
 
 Expected health fields: `status=ok`, `database=ready`, `service=kakakin`.
