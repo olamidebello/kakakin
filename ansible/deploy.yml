@@ -69,7 +69,7 @@
   tasks:
     - name: Install deployment dependencies
       ansible.builtin.apt:
-        name: [git, docker.io, nginx, certbot, ca-certificates, python3, openssl]
+        name: [git, docker.io, nginx, certbot, ca-certificates, python3, openssl, curl]
         state: present
         update_cache: true
         cache_valid_time: 3600
@@ -268,6 +268,9 @@
             if conflicts: sys.exit('Domain already configured elsewhere: '+', '.join(conflicts))
           - "{{ kakakin_domain }}"
       changed_when: false
+    - name: Join the server's IPv4 listener group so SNI cannot fall through to another app
+      ansible.builtin.set_fact:
+        kakakin_listener_ipv4: "{{ kakakin_public_ipv4 if kakakin_public_ipv4 is defined and kakakin_public_ipv4 in ansible_facts.get('all_ipv4_addresses', []) else ansible_facts.get('default_ipv4', {}).get('address', '') }}"
     - name: Check whether a domain certificate already exists
       ansible.builtin.stat:
         path: "/etc/letsencrypt/live/{{ kakakin_domain }}/fullchain.pem"
@@ -347,6 +350,18 @@
       ansible.builtin.service:
         name: nginx
         state: reloaded
+    - name: Verify local HTTPS with the actual hostname and SNI
+      ansible.builtin.command:
+        argv: [curl, --noproxy, '*', --fail, --silent, --show-error, --max-time, '20', --resolve, "{{ kakakin_domain }}:443:{{ kakakin_listener_ipv4 | default('127.0.0.1', true) }}", "https://{{ kakakin_domain }}/healthz"]
+      register: kakakin_sni_health
+      changed_when: false
+      when: kakakin_enable_tls
+    - name: Confirm the local HTTPS route reaches the Kakakin database-backed service
+      ansible.builtin.assert:
+        that:
+          - (kakakin_sni_health.stdout | from_json).service == 'kakakin'
+          - (kakakin_sni_health.stdout | from_json).database == 'ready'
+      when: kakakin_enable_tls
     - name: Verify the application through Nginx and the configured domain
       ansible.builtin.uri:
         url: "{{ 'https' if kakakin_enable_tls else 'http' }}://{{ kakakin_domain }}/healthz"
@@ -359,6 +374,24 @@
           - kakakin_public_health.json.service | default('') == 'kakakin'
           - kakakin_public_health.json.database | default('') == 'ready'
         fail_msg: The domain did not reach the expected Kakakin backend. Check DNS and Nginx routing before registering the app.
+    - name: Fetch the public home page and its sign-in redirect
+      ansible.builtin.uri:
+        url: "{{ 'https' if kakakin_enable_tls else 'http' }}://{{ kakakin_domain }}/"
+        status_code: 200
+        follow_redirects: safe
+        return_content: true
+        validate_certs: true
+        headers:
+          Cache-Control: no-cache
+      register: kakakin_public_page
+    - name: Reject media or other application pages at the Kakakin address
+      ansible.builtin.assert:
+        that:
+          - "'Welcome to Kakakin.' in kakakin_public_page.content"
+          - "'application-name' in kakakin_public_page.content"
+          - "'AFRICA MEDIA HUB' not in (kakakin_public_page.content | upper)"
+          - "kakakin_public_page.url.startswith(('https' if kakakin_enable_tls else 'http') + '://' + kakakin_domain + '/')"
+        fail_msg: HTTPS did not render the Kakakin sign-in page. Inspect the active Nginx SNI/listener routing; the deployment is not verified.
     - name: Register the verified app with Olamidepanel
       ansible.builtin.include_tasks: tasks/olamidepanel-register.yml
       when: kakakin_olamidepanel | default(false) | bool
@@ -379,7 +412,7 @@
         content: >-
           {{ {'domain': kakakin_domain, 'revision': kakakin_git.after,
           'url': ('https' if kakakin_enable_tls else 'http') + '://' + kakakin_domain,
-          'health': kakakin_public_health.json, 'dns_ready': true,
+          'health': kakakin_public_health.json, 'dns_ready': true, 'homepage_verified': true,
           'nginx_cleanup': (kakakin_nginx_repair.stdout | default('{}') | from_json),
           'backups': kakakin_backups, 'verified': true} | to_nice_json }}
       when: kakakin_repair | default(false) | bool

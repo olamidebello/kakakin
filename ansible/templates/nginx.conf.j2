@@ -3,6 +3,9 @@ limit_req_zone $binary_remote_addr zone=kakakin_campaign_login:10m rate=6r/m;
 server {
     listen 80;
     listen [::]:80;
+{% if kakakin_listener_ipv4 | default('') %}
+    listen {{ kakakin_listener_ipv4 }}:80;
+{% endif %}
     server_name {{ kakakin_domain }};
     client_max_body_size 1m;
     location ^~ /.well-known/acme-challenge/ { root /var/www/kakakin-acme; }
@@ -12,6 +15,9 @@ server {
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
+{% if kakakin_listener_ipv4 | default('') %}
+    listen {{ kakakin_listener_ipv4 }}:443 ssl;
+{% endif %}
     server_name {{ kakakin_domain }};
     ssl_certificate /etc/letsencrypt/live/{{ kakakin_domain }}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{{ kakakin_domain }}/privkey.pem;

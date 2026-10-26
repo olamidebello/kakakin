@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 import tempfile
 import subprocess
+from unittest.mock import patch
 
 ROOT=Path(__file__).parents[1]
 def load(name, path):
@@ -20,8 +21,26 @@ class RouteRepairTests(unittest.TestCase):
         text='limit_req_zone $binary_remote_addr zone=kakakin_login:10m rate=6r/m;\nlimit_req_zone $binary_remote_addr zone=other_login:10m rate=6r/m;\nserver { server_name kakakin.africandroid.world; }'
         result,count=nginx.remove_exclusive_blocks(text,'kakakin.africandroid.world')
         self.assertEqual(count,1);self.assertNotIn('zone=kakakin_login:',result);self.assertIn('zone=other_login:',result)
-    def test_shared_vhost_is_not_modified(self):
-        with self.assertRaises(ValueError): nginx.remove_exclusive_blocks('server { server_name other.test kakakin.africandroid.world; }','kakakin.africandroid.world')
+    def test_shared_media_vhost_keeps_other_hostnames_and_upstream(self):
+        source='server { server_name media.africandroid.world kakakin.africandroid.world www.media.test; location / { proxy_pass http://127.0.0.1:18880; } }'
+        result,count=nginx.remove_exclusive_blocks(source,'kakakin.africandroid.world')
+        self.assertEqual(count,1);self.assertNotIn('kakakin.africandroid.world',result)
+        self.assertIn('media.africandroid.world',result);self.assertIn('www.media.test',result);self.assertIn('127.0.0.1:18880',result)
+    def test_shared_quoted_alias_preserves_regex_and_wildcard(self):
+        source='server { server_name "kakakin.africandroid.world" *.media.test ~^media[0-9]+\\.test$; }'
+        result,count=nginx.remove_exclusive_blocks(source,'kakakin.africandroid.world')
+        self.assertEqual(count,1);self.assertIn('*.media.test',result);self.assertIn('~^media',result);self.assertNotIn('"kakakin.africandroid.world"',result)
+    def test_included_server_name_snippet_is_detached(self):
+        result,count=nginx.remove_exclusive_blocks('server_name kakakin.africandroid.world media.test;','kakakin.africandroid.world')
+        self.assertEqual(count,1);self.assertIn('media.test',result);self.assertNotIn('kakakin.africandroid.world',result)
+    def test_exclusive_snippet_does_not_comment_out_later_directives(self):
+        result,count=nginx.remove_exclusive_blocks('server_name kakakin.africandroid.world; root /srv/media;','kakakin.africandroid.world')
+        self.assertEqual(count,1);self.assertIn('root /srv/media;',nginx.mask(result))
+    def test_active_include_graph_covers_custom_panel_directory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            custom=Path(folder)/'panel-sites'/'media.conf';custom.parent.mkdir();custom.write_text('server { server_name media.test; }')
+            dump=subprocess.CompletedProcess([],0,stdout='# configuration file '+str(custom)+':\nserver { server_name media.test; }\n',stderr='')
+            with patch.object(nginx.subprocess,'run',return_value=dump):self.assertEqual(nginx.active_sources(),[custom.resolve()])
     def test_quoted_braces_and_comments_do_not_break_parser(self):
         text='# server { server_name kakakin.africandroid.world; }\nserver { server_name "kakakin.africandroid.world"; location / { return 200 "a}b{"; } }'
         result,count=nginx.remove_exclusive_blocks(text,'kakakin.africandroid.world')

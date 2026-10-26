@@ -14,6 +14,9 @@ try{
  check((await fetch(origin+'/healthz')).ok,'Server starts with migrated persistent database');
  check((await fetch(origin+'/',{redirect:'manual'})).status===303,'Dashboard requires login');
  check((await fetch(origin+'/favicon.svg')).ok,'Brand assets served without login');
+ const recovery=await fetch(origin+'/__kakakin_recover');check(recovery.ok&&(await recovery.text()).includes('Restore Kakakin'),'Browser recovery page is available without login');
+ const oldWorker=await fetch(origin+'/sw.js');check(oldWorker.ok&&oldWorker.headers.get('content-type').includes('javascript')&&(await oldWorker.text()).includes('registration.unregister'),'Stale media service worker can update to an unregistering replacement');
+ check(oldWorker.headers.get('x-kakakin-app')==='kakakin','Gateway responses carry the Kakakin identity marker');
  const forged=await fetch(origin+'/api/workspace',{headers:{'oai-authenticated-user-id':'attacker','oai-authenticated-user-email':'owner@example.test'}});check(forged.status===401,'Forged identity headers do not authenticate requests');
  const rejected=await fetch(origin+'/signin-with-chatgpt',{method:'POST',headers:{origin:'https://attacker.example'},body:new URLSearchParams({email:'owner@example.test',password:'Gateway-test-password-123'})});check(rejected.status===403,'Cross-origin login rejected');
  const login=await fetch(origin+'/signin-with-chatgpt',{method:'POST',redirect:'manual',headers:{origin},body:new URLSearchParams({email:'owner@example.test',password:'Gateway-test-password-123',return_to:'/'})});check(login.status===303,'Administrator can log in');const cookie=login.headers.get('set-cookie').split(';')[0];check(login.headers.get('set-cookie').includes('HttpOnly'),'Session cookie is HttpOnly');

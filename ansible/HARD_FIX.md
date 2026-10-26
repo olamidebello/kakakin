@@ -21,10 +21,10 @@ If local tracked edits prevent checkout, review them before proceeding; these co
 - When DNS is missing, can reuse the panel's encrypted production Namecheap account. Automatic selection requires exactly one production account; with more than one, set `kakakin_namecheap_account_id` through `--vars`. It provisions only the `kakakin` A record in `africandroid.world` using the installed panel adapter, which preserves other records and refuses conflicting/unsupported zones. Keys are decrypted only in process memory.
 - Waits up to roughly two minutes for a provisioned record to propagate, without repeating DNS writes. Missing API access, unsupported DNS, conflicting records, resolver failures, and stale AAAA records produce an actionable stop before application changes.
 - Pulls the selected app revision, builds its image if needed, recreates crashed/unhealthy or misconfigured Kakakin containers, and makes the usual cold backup before migrations.
-- Removes duplicate **exclusive** Kakakin vhost blocks from other enabled Nginx site files, retaining other server blocks. It backs up changed files and restores them if `nginx -t` fails. Shared blocks listing additional domains are reported instead of being deleted. The managed `/etc/nginx/sites-available/kakakin.conf` is regenerated for the corrected domain.
+- Inspects the active `nginx -T` include graph, including custom panel directories. Removes duplicate exclusive Kakakin vhost blocks and detaches only the exact Kakakin hostname from shared media vhosts or included name snippets, retaining other aliases, directives and backends. Changed files are backed up and restored if `nginx -t` fails. The managed `/etc/nginx/sites-available/kakakin.conf` is regenerated for the corrected domain.
 - Uses a distinct login rate-limit zone to avoid colliding with the older Kakakin zone name.
 - Checks certificate hostname and validity. Missing, invalid, or near-expiry certificates are issued/renewed only after the DNS preflight; valid certificates are reused. Nginx is validated before reload.
-- Verifies the public backend identity and database readiness, then registers the domain in Olamidepanel and writes `/var/log/kakakin/hard-fix-report.json`.
+- Joins the host IPv4-specific Nginx listener group when available, preventing HTTPS SNI from falling through to a media/default site. Verifies local SNI with certificate validation, public backend identity/database readiness, and the actual Kakakin home/sign-in HTML; a Media Hub page cannot pass. Then registers the domain in Olamidepanel and writes `/var/log/kakakin/hard-fix-report.json`.
 
 The process does not delete the old `.com` certificate, other domains, unrelated Nginx settings, application accounts, recipient consent records, or message history. It does not retry ambiguous completed/live campaign sends or weaken TLS verification. In repair mode, an existing static Site Publisher request for this exact hostname is backed up under `/var/backups/kakakin/static-publisher/` and retired to `external_backend` after DNS checks. Domain ownership and static files remain intact; the request is retained in MySQL instead of being deleted. The publisher worker lock prevents an in-flight static provisioning job from racing the takeover. Ordinary deployments still stop on an active static request.
 
@@ -62,3 +62,9 @@ curl -fsS https://kakakin.africandroid.world/healthz
 ```
 
 Expected public health includes `service=kakakin` and `database=ready`. A successful local syntax/unit check is not a claim that the live server has been repaired. Run this playbook on the server to perform the actual DNS, Nginx, certificate and deployment checks. Unknown global server failures and unavailable third-party credentials cannot be automatically guaranteed away.
+
+## If the hostname still shows Africa Media Hub
+
+The repair now removes this exact hostname from shared media routes without removing the media app's remaining domains or service. It also verifies the public home page instead of relying only on `/healthz`.
+
+After a successful server repair, if an old offline page remains in your browser, open `https://kakakin.africandroid.world/__kakakin_recover` and tap **Clear saved pages & open Kakakin**. It clears only this origin's browser cache/service-worker registrations; account passwords and server data are preserved. Replacement `/sw.js` and `/service-worker.js` responses also retire a previously installed media worker. This browser step does not substitute for fixing routing or HTTPS.

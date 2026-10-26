@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Move only exclusive target-domain virtual hosts to Kakakin's managed config.
+"""Detach only the exact target hostname from active virtual hosts to Kakakin's managed config.
 
 Other server blocks are retained. Changes are backed up and reverted if nginx -t
 fails. The helper never reloads Nginx; the deployment does so after writing the
-new route. Shared multi-domain server blocks require explicit operator review.
+new route. Shared server blocks retain every hostname except the exact Kakakin hostname.
 """
 import argparse
 import hashlib
@@ -43,31 +43,59 @@ def mask(text):
 
 
 def remove_exclusive_blocks(text, domain):
+    """Detach the exact hostname; preserve shared media vhosts and other aliases."""
     clean = mask(text)
-    spans = []
+    edits = []
+    covered = []
+    repaired = 0
+    target = re.compile(r"(?<!\S)(?:\""+re.escape(domain)+r"\"|'"+re.escape(domain)+r"'|"+re.escape(domain)+r")(?!\S)", re.I)
+    def directives(start, end):
+        rows=[]
+        for directive in re.finditer(r'\bserver_name\b([^;]*);',clean[start:end]):
+            a=start+directive.start(1); b=start+directive.end(1)
+            rows.append((start+directive.start(),start+directive.end(),a,b,[n.lower() for n in shlex.split(text[a:b],comments=True)]))
+        return rows
     for match in re.finditer(r'\bserver\s*\{', clean):
-        start = match.start()
-        depth = 1
-        pos = match.end()
-        while pos < len(clean) and depth:
-            if clean[pos] == '{': depth += 1
-            elif clean[pos] == '}': depth -= 1
-            pos += 1
-        if depth: raise ValueError('Unbalanced Nginx server block; no file changed.')
-        names = []
-        for directive in re.finditer(r'\bserver_name\b([^;]*);', clean[match.end():pos-1]):
-            a = match.end()+directive.start(1)
-            b = match.end()+directive.end(1)
-            names += [n.lower() for n in shlex.split(text[a:b], comments=True)]
-        if domain not in names: continue
-        if set(names) != {domain}:
-            raise ValueError('The target shares a server block with other domains. No automatic takeover was performed.')
-        spans.append((start, pos))
-    if not spans: return text, 0
-    for a, b in reversed(spans): text = text[:a]+'\n# Kakakin target route moved to its managed configuration.\n'+text[b:]
-    if not re.search(r'\bserver\s*\{', mask(text)):
-        text = re.sub(r'\blimit_req_zone\b[^;]*\bzone=(?:kakakin_login|kakakin_campaign_login):[^;]*;', '', text)
-    return text, len(spans)
+        start=match.start(); depth=1; pos=match.end()
+        while pos<len(clean) and depth:
+            if clean[pos]=='{':depth+=1
+            elif clean[pos]=='}':depth-=1
+            pos+=1
+        if depth:raise ValueError('Unbalanced Nginx server block; no file changed.')
+        covered.append((start,pos))
+        rows=directives(match.end(),pos-1)
+        names=[name for row in rows for name in row[4]]
+        if domain not in names:continue
+        repaired+=1
+        if set(names)=={domain}:
+            edits.append((start,pos,'\n# Kakakin target route moved to its managed configuration.\n'))
+        else:
+            for ds,de,a,b,names in rows:
+                if domain not in names:continue
+                if set(names)=={domain}:edits.append((ds,de,''))
+                else:edits.append((a,b,target.sub('',text[a:b])))
+    # An included snippet can contain server_name without its own server block.
+    for ds,de,a,b,names in directives(0,len(clean)):
+        if any(start<=ds<end for start,end in covered) or domain not in names:continue
+        repaired+=1
+        if set(names)=={domain}:edits.append((ds,de,'\n# Kakakin hostname moved to its managed vhost.\n'))
+        else:edits.append((a,b,target.sub('',text[a:b])))
+    for a,b,replacement in sorted(edits,reverse=True):text=text[:a]+replacement+text[b:]
+    if repaired and not re.search(r'\bserver\s*\{',mask(text)):
+        text=re.sub(r'\blimit_req_zone\b[^;]*\bzone=(?:kakakin_login|kakakin_campaign_login):[^;]*;','',text)
+    return text,repaired
+
+
+def active_sources():
+    """Read the active include graph, including panel-generated custom directories."""
+    result=subprocess.run([shutil.which('nginx') or '/usr/sbin/nginx','-T'],capture_output=True,text=True,timeout=30)
+    if result.returncode:raise ValueError('Existing Nginx configuration cannot be inspected. Run nginx -t; no route was modified.')
+    files=set()
+    for name in re.findall(r'^# configuration file (.+):$',result.stdout,re.M):
+        path=Path(name)
+        if path.is_absolute() and path.is_file():files.add(path.resolve())
+    if not files:raise ValueError('Nginx returned no active source files; no route was modified.')
+    return sorted(files)
 
 
 def atomic_write(path, content, info):
@@ -91,20 +119,16 @@ def main():
     if not re.fullmatch(r'[a-z0-9.-]+', args.domain): raise ValueError('Invalid domain')
     managed = Path(args.managed).resolve()
     plans = {}
-    for directory in ['/etc/nginx/sites-enabled', '/etc/nginx/conf.d']:
-        for entry in Path(directory).glob('*.conf' if directory.endswith('/conf.d') else '*'):
-            if not entry.is_file(): continue
-            path = entry.resolve()
-            if path == managed or path in plans: continue
-            info = path.stat()
-            text = path.read_text()
-            updated, count = remove_exclusive_blocks(text, args.domain)
-            if not count: continue
-            if info.st_uid != 0 or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-                raise ValueError('Conflicting Nginx file is not trusted root-owned code; no file changed.')
-            plans[path] = (text, updated, info, count)
+    for path in active_sources():
+        if path==managed:continue
+        info=path.stat();text=path.read_text()
+        updated,count=remove_exclusive_blocks(text,args.domain)
+        if not count:continue
+        if info.st_uid!=0 or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise ValueError('Conflicting Nginx file is not trusted root-owned code; no file changed.')
+        plans[path]=(text,updated,info,count)
     if not plans:
-        print(json.dumps({'changed': False, 'removed_blocks': 0})); return
+        print(json.dumps({'changed': False, 'repaired_vhosts': 0})); return
     backup = Path(args.backup_root)/('nginx-repair-'+time.strftime('%Y%m%dT%H%M%S')+'-'+str(os.getpid()))
     backup.mkdir(parents=True, mode=0o700)
     for path in plans:
@@ -120,7 +144,7 @@ def main():
             original, _, info, _ = plans[path]
             atomic_write(path, original, info)
         raise
-    report = {'changed': True, 'removed_blocks': sum(v[3] for v in plans.values()), 'files': [str(p) for p in plans], 'backup': str(backup)}
+    report = {'changed': True, 'repaired_vhosts': sum(v[3] for v in plans.values()), 'files': [str(p) for p in plans], 'backup': str(backup)}
     (backup/'report.json').write_text(json.dumps(report, indent=2))
     print(json.dumps(report))
 
