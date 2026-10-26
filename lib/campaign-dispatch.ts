@@ -1,4 +1,4 @@
-import {env} from 'cloudflare:workers';
+import {messagingConfig} from './provider-config';
 const now=()=>new Date().toISOString(); const uid=()=>crypto.randomUUID();
 function fail(message:string,status=400){return Response.json({error:message},{status})}
 async function dispatchCampaignImpl(c:{db:D1Database,tenant:string,profile:{email:string}},id:string,b:any){
@@ -9,7 +9,7 @@ async function dispatchCampaignImpl(c:{db:D1Database,tenant:string,profile:{emai
  if(campaign.scheduled&&Date.parse(campaign.scheduled)>Date.now())return fail('This campaign is scheduled for a future time. Dispatch when due.');
  const all:any[]=(await c.db.prepare('SELECT * FROM contacts WHERE tenant=? AND consent=1 AND status=?').bind(c.tenant,'active').all()).results;
  const contacts=all.filter((x:any)=>(campaign.segment==='All contacts'||campaign.segment===x.segment)&&(x.channel==='Both'||x.channel===campaign.channel)&&(!live||!x.test));if(!contacts.length)return fail('No eligible opted-in contacts match this audience.');if(contacts.length>50)return fail('Split this audience into batches of up to 50 recipients.');
- const vars=env as any;let template:any=null;if(live&&campaign.channel==='WhatsApp'){if(!vars.WHATSAPP_TOKEN||!vars.WHATSAPP_PHONE_ID||!vars.WHATSAPP_API_VERSION)return fail('WhatsApp credentials are not configured.');template=await c.db.prepare('SELECT * FROM templates WHERE id=? AND tenant=?').bind(campaign.template||'',c.tenant).first();if(!template?.provider_name)return fail('Select a template approved in your WhatsApp Business account.');}
+ const vars=await messagingConfig();let template:any=null;if(live&&campaign.channel==='WhatsApp'){if(!vars.WHATSAPP_TOKEN||!vars.WHATSAPP_PHONE_ID||!vars.WHATSAPP_API_VERSION)return fail('WhatsApp credentials are not configured.');template=await c.db.prepare('SELECT * FROM templates WHERE id=? AND tenant=?').bind(campaign.template||'',c.tenant).first();if(!template?.provider_name)return fail('Select a template approved in your WhatsApp Business account.');}
  if(live&&campaign.channel==='SMS'&&(!vars.TWILIO_ACCOUNT_SID||!vars.TWILIO_AUTH_TOKEN||!vars.TWILIO_FROM))return fail('SMS provider credentials are not configured.');
  const day=now().slice(0,10);const sent:any=await c.db.prepare("SELECT COUNT(*) n FROM deliveries WHERE tenant=? AND status!='simulated' AND created LIKE ?").bind(c.tenant,day+'%').first();if(live&&sent.n+contacts.length>(settings.dailyLimit||100))return fail('Daily sending limit would be exceeded.');
  const claim=await c.db.prepare("UPDATE campaigns SET status='sending' WHERE id=? AND tenant=? AND status IN ('draft','scheduled','paused')").bind(id,c.tenant).run();if(!claim.meta.changes)return fail('Campaign cannot be sent from its current state.',409);

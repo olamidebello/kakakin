@@ -1,0 +1,16 @@
+{
+  "name": "Kakakin",
+  "version": "1.0.0",
+  "version_code": 1,
+  "package": "world.africandroid.kakakin",
+  "minimum_android": "8.0",
+  "sha256": "715215dcad3d92f627364349382970d4095579ba6da4ba954e7a909381d45e35",
+  "certificate_sha256": "2129d4e8e047f68ea2048e9fa1e59b6a867099e83830b453560d4088a89c107d",
+  "size_bytes": 16856,
+  "owner": "Olamide Olatayo Bello Corporation",
+  "website": "https://kakakin.africandroid.world/",
+  "permissions": [
+    "INTERNET"
+  ],
+  "limitations": "Online HTTPS website client. No offline messaging, native push or background contact access. Android device acceptance testing pending. iOS uses Safari Add to Home Screen."
+}

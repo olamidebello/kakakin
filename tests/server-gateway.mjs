@@ -14,6 +14,8 @@ try{
  check((await fetch(origin+'/healthz')).ok,'Server starts with migrated persistent database');
  check((await fetch(origin+'/',{redirect:'manual'})).status===303,'Dashboard requires login');
  check((await fetch(origin+'/favicon.svg')).ok,'Brand assets served without login');
+ for(const path of ['/terms','/privacy','/copyright','/install']){const response=await fetch(origin+path,{redirect:'manual'});check(response.status===200&&(await response.text()).includes('Olamide Olatayo Bello Corporation'),'Public '+path+' page works without login')}
+ const apk=await fetch(origin+'/downloads/kakakin.apk');check(apk.ok&&apk.headers.get('content-type')==='application/vnd.android.package-archive'&&new Uint8Array(await apk.arrayBuffer())[0]===80,'Signed Android APK served with correct MIME type');
  const recovery=await fetch(origin+'/__kakakin_recover');check(recovery.ok&&(await recovery.text()).includes('Restore Kakakin'),'Browser recovery page is available without login');
  const oldWorker=await fetch(origin+'/sw.js');check(oldWorker.ok&&oldWorker.headers.get('content-type').includes('javascript')&&(await oldWorker.text()).includes('registration.unregister'),'Stale media service worker can update to an unregistering replacement');
  check(oldWorker.headers.get('x-kakakin-app')==='kakakin','Gateway responses carry the Kakakin identity marker');

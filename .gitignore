@@ -55,3 +55,10 @@ yarn-error.log*
 # Python integration/test bytecode
 __pycache__/
 *.pyc
+
+# Android private signing and intermediate output
+*.jks
+*.keystore
+/mobile/android/build/
+/mobile/android/dist/
+*.apk.idsig

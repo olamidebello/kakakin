@@ -1,0 +1,9 @@
+import {env} from 'cloudflare:workers';
+export const providerFields:Record<string,string[]>={paystack:['secretKey'],stripe:['secretKey','webhookSecret'],whatsapp:['WHATSAPP_TOKEN','WHATSAPP_PHONE_ID','WHATSAPP_API_VERSION','META_APP_SECRET','WEBHOOK_VERIFY_TOKEN'],twilio:['TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','TWILIO_FROM','TWILIO_WEBHOOK_URL']};
+const encode=(b:Uint8Array)=>btoa(String.fromCharCode(...b));
+const decode=(s:string)=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function key(){const value=(env as any).CREDENTIALS_KEY;if(!value||value.length<48)throw new Error('Credential encryption is not configured on this host.');return crypto.subtle.importKey('raw',await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)),{name:'AES-GCM'},false,['encrypt','decrypt']);}
+export async function seal(value:any){const iv=crypto.getRandomValues(new Uint8Array(12));return JSON.stringify({v:1,iv:encode(iv),data:encode(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},await key(),new TextEncoder().encode(JSON.stringify(value)))))});}
+export async function open(value:string){const x=JSON.parse(value);return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:decode(x.iv)},await key(),decode(x.data))));}
+export async function providerConfig(name:string){const row=await env.DB!.prepare('SELECT value FROM settings WHERE id=?').bind('provider:'+name).first<any>();return row?await open(row.value):{enabled:false,values:{}};}
+export async function messagingConfig(){const result:any={...env};for(const name of ['whatsapp','twilio']){const row=await env.DB!.prepare('SELECT value FROM settings WHERE id=?').bind('provider:'+name).first<any>();if(row){const c=await open(row.value);for(const field of providerFields[name])result[field]=c.enabled?c.values[field]||'':'';}}return result;}

@@ -107,3 +107,7 @@ Plan names are administrative labels; payment collection, automated number owner
 ## Artwork
 
 Original SVG trumpet mark: `public/favicon.svg`. Generated artwork: `public/kakakin-art.webp` (built-in image generation; compressed for delivery). Prompt: sculptural copper/brass ceremonial trumpet with emerald enamel, flowing green ribbons and pearl spheres representing voices connecting communities, warm ivory backdrop, African geometric detailing, premium tactile editorial 3D art; no text or UI. Icons: original mark rendered at 192 and 512 pixels.
+
+## Android, legal pages and marketplace
+
+See [mobile and commerce deployment](ansible/MOBILE_AND_COMMERCE.md). The signed Android release is in public/downloads with SHA-256 metadata; install page is /install. Terms, privacy and copyright identify Olamide Olatayo Bello Corporation. /marketplace supports moderated tenant listings, hosted Paystack/Stripe checkout and verified order status; /platform provides super admin encrypted API credential controls and request handling. Merchant accounts and live keys must be configured by the operator. Seller payouts and refunds are manually administered.

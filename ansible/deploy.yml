@@ -164,6 +164,18 @@
         src: "{{ kakakin_config }}/session.key"
       register: kakakin_session_key
       no_log: true
+    - name: Create a persistent credential encryption key without printing it
+      ansible.builtin.command:
+        argv: [python3, -c, "import pathlib,secrets,os; p=pathlib.Path(os.environ['KEY_PATH']); fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,secrets.token_hex(48).encode()); os.close(fd)"]
+        creates: "{{ kakakin_config }}/credentials.key"
+      environment:
+        KEY_PATH: "{{ kakakin_config }}/credentials.key"
+      no_log: true
+    - name: Load the existing credential encryption key
+      ansible.builtin.slurp:
+        src: "{{ kakakin_config }}/credentials.key"
+      register: kakakin_credentials_key
+      no_log: true
     - name: Write server-only environment configuration
       ansible.builtin.template:
         src: kakakin.env.j2

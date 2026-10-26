@@ -1,3 +1,4 @@
+import {messagingConfig} from '../../../lib/provider-config';
 import {dispatchCampaign} from '../../../lib/campaign-dispatch';
 import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '../../chatgpt-auth';
@@ -6,7 +7,7 @@ const now=()=>new Date().toISOString(); const uid=()=>crypto.randomUUID();
 const tables=['contacts','campaigns','templates','referrals','members','deliveries','events'];
 const fields:Record<string,string[]>={contacts:['name','phone','email','segment','consent','consent_source','channel','status'],campaigns:['name','channel','message','segment','mode','scheduled','template','automatic'],templates:['name','channel','body','provider_name','language'],referrals:['name','message','url'],members:['email','role'],tenants:['name','status','plan'],users:['name','status','role']};
 function fail(message:string,status=400){return Response.json({error:message},{status})}
-async function context(req:Request){
+export async function context(req:Request){
  const user=await getChatGPTUser();if(!user)throw new Error('401:Sign in to open your workspace.');
  const db=env.DB;if(!db)throw new Error("Database binding unavailable");let profile:any=await db.prepare('SELECT * FROM users WHERE id=?').bind(user.userId).first();
  if(!profile){const count:any=await db.prepare("SELECT COUNT(*) n FROM users WHERE role='superadmin'").first();await db.prepare('INSERT OR IGNORE INTO users (id,email,name,role,status,created) VALUES (?,?,?,?,?,?)').bind(user.userId,user.email.toLowerCase(),user.displayName,count.n===0&&(!(env as any).BOOTSTRAP_ADMIN_EMAIL||user.email.toLowerCase()===(env as any).BOOTSTRAP_ADMIN_EMAIL.toLowerCase())?'superadmin':'member','active',now()).run();profile=await db.prepare('SELECT * FROM users WHERE id=?').bind(user.userId).first();}
@@ -19,8 +20,8 @@ async function context(req:Request){
  if(tenant.status!=='active'&&!superadmin)throw new Error('403:Workspace is suspended.');
  return {db,profile,superadmin,tenants,tenant:target,role:membership?.role||'viewer'};
 }
-function error(e:any){const m=String(e.message||e);const match=m.match(/^(401|403|409):/);return fail(match?m.slice(4):m,match?Number(match[1]):400)}
-export async function GET(req:Request){try{const c=await context(req);const data:any={scheduler:(env as any).SERVER_JOB_TOKEN?'server-active':'host-trigger-required',user:c.profile,superadmin:c.superadmin,role:c.role,tenants:c.tenants,tenant:c.tenant,provider:{whatsapp:!!((env as any).WHATSAPP_TOKEN&&(env as any).WHATSAPP_PHONE_ID&&(env as any).WHATSAPP_API_VERSION),sms:!!((env as any).TWILIO_ACCOUNT_SID&&(env as any).TWILIO_AUTH_TOKEN&&(env as any).TWILIO_FROM)}};for(const table of tables)data[table]=(await c.db.prepare(`SELECT * FROM ${table} WHERE tenant=? ORDER BY ${table==='members'?'id':'created'} DESC LIMIT 500`).bind(c.tenant).all()).results;data.settings=JSON.parse((await c.db.prepare('SELECT value FROM settings WHERE id=?').bind(c.tenant).first<any>())?.value||'{}');if(c.superadmin)data.users=(await c.db.prepare('SELECT * FROM users ORDER BY created DESC LIMIT 500').all()).results;return Response.json(data)}catch(e){return error(e)}}
+export function error(e:any){const m=String(e.message||e);const match=m.match(/^(401|403|409):/);return fail(match?m.slice(4):m,match?Number(match[1]):400)}
+export async function GET(req:Request){try{const c=await context(req);const providers=await messagingConfig();const data:any={scheduler:(env as any).SERVER_JOB_TOKEN?'server-active':'host-trigger-required',user:c.profile,superadmin:c.superadmin,role:c.role,tenants:c.tenants,tenant:c.tenant,provider:{whatsapp:!!(providers.WHATSAPP_TOKEN&&providers.WHATSAPP_PHONE_ID&&providers.WHATSAPP_API_VERSION),sms:!!(providers.TWILIO_ACCOUNT_SID&&providers.TWILIO_AUTH_TOKEN&&providers.TWILIO_FROM)}};for(const table of tables)data[table]=(await c.db.prepare(`SELECT * FROM ${table} WHERE tenant=? ORDER BY ${table==='members'?'id':'created'} DESC LIMIT 500`).bind(c.tenant).all()).results;data.settings=JSON.parse((await c.db.prepare('SELECT value FROM settings WHERE id=?').bind(c.tenant).first<any>())?.value||'{}');if(c.superadmin)data.users=(await c.db.prepare('SELECT * FROM users ORDER BY created DESC LIMIT 500').all()).results;return Response.json(data)}catch(e){return error(e)}}
 export async function POST(req:Request){try{
  const c=await context(req);if(c.role==='viewer')return fail('Viewer accounts cannot change data.',403);
  if(req.headers.get('origin')&&req.headers.get('origin')!==new URL(req.url).origin)return fail('Invalid request origin.',403);
