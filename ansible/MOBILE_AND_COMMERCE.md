@@ -29,3 +29,17 @@ The current marketplace is single-merchant settlement through the operator’s c
 ## Legal completion
 
 Terms, privacy and copyright name Olamide Olatayo Bello Corporation. Privacy/copyright/refund requests are stored and visible to super admins; resolving a request records completion but does not erase data automatically. Operator must supply a public business/legal contact, jurisdiction-specific requirements and documented retention/backup policy before broad public launch. Have qualified counsel review the supplied terms for the actual business and jurisdictions; no invented registration address or legal compliance claim is included. Third-party libraries, trademarks and user content retain their respective ownership/licenses.
+
+
+## Kakakin publication across two hosts
+
+Kakakin runs on 154.16.170.86. Public africanappsstore.space currently points to 181.214.149.146. Updating an africanappsstore.service copy on the Kakakin machine does not update that public store. The Kakakin publisher now checks all public DNS addresses against the target host before it changes store files. It does not move DNS or replace other domains. For verified NAT deployments, Ansible may be given store_public_addresses explicitly.
+
+On the public store host (181.214.149.146), run:
+
+```sh
+curl -fL https://raw.githubusercontent.com/olamidebello/africanappsstore/main/scripts/publish-kakakin.sh -o /root/publish-kakakin.sh
+bash /root/publish-kakakin.sh
+```
+
+The bootstrap preserves source edits, updates the existing store with database/code backups, checks the locally served APK checksum and catalog entry, then verifies public HTTPS downloads and catalog. No Kakakin application rebuild or administrator password is needed. From a controller already authorized for SSH to the store, use `ansible-playbook -i '181.214.149.146,' -u root ansible/publish-mobile.yml` in the Kakakin checkout instead. SSH authorization must already exist; the script does not copy credentials or change DNS to work around missing access.

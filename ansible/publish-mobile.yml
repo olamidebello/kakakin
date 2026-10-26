@@ -4,6 +4,26 @@
   become: true
   vars:
     kakakin_store_source: /opt/kakakin-store-release
+  pre_tasks:
+    - name: Resolve the public store domain on the deployment target
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "import socket,json; print(json.dumps(sorted({x[4][0] for x in socket.getaddrinfo('africanappsstore.space',443,type=socket.SOCK_STREAM)})))"
+      register: store_dns
+      changed_when: false
+    - name: Refuse to update a store copy on the wrong server
+      ansible.builtin.assert:
+        that:
+          - (store_dns.stdout | from_json | length) > 0
+          - (store_dns.stdout | from_json | difference(ansible_all_ipv4_addresses + ansible_all_ipv6_addresses + (store_public_addresses | default([]))) | length) == 0
+        fail_msg: >-
+          africanappsstore.space resolves to {{ store_dns.stdout }}, which does not
+          belong to this server. No store files have been changed by this run.
+          Run scripts/publish-kakakin.sh from the africanappsstore repository ON
+          the public store server, or target that host with Ansible over SSH.
+          For a verified NAT deployment only, supply store_public_addresses.
   tasks:
     - name: Pull current store source without discarding edits
       ansible.builtin.git:
@@ -18,7 +38,7 @@
       changed_when: false
     - name: Deploy store code and assets using existing backup and rollback mechanism
       ansible.builtin.command:
-        argv: [python3, '{{ kakakin_store_source }}/tools/update_store.py']
+        argv: [python3, '{{ kakakin_store_source }}/tools/update_store.py', --verify-kakakin]
       register: store_update
       changed_when: "'UPDATED' in store_update.stdout"
     - name: Verify public HTTPS release files
