@@ -6,6 +6,27 @@ Target: **kakakin.africandroid.com**, on the existing Olamidepanel server **154.
 
 In the `africandroid.com` DNS zone, point `kakakin` to `154.16.170.86` with an A record. Only retain an AAAA record if that same server actually serves the app over IPv6. DNS changes are not performed by these scripts.
 
+## Automatic pull-and-deploy script
+
+From an existing checkout, run:
+
+```bash
+sudo bash scripts/pull-and-deploy.sh
+```
+
+This root-only entry point requires the existing panel, installs missing Git/Ansible tools, clones or updates `/opt/kakakin-bootstrap`, checks out the selected revision without discarding tracked edits, and invokes `ansible/pull-and-deploy.yml`. It preserves the interactive first-install email/password prompts. Run it on `154.16.170.86`, not on your workstation. The deployment domain defaults to `kakakin.africandroid.com`.
+
+For a public repository, download the script to a file before running it so stdin remains available for prompts:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/olamidebello/kakakin/main/scripts/pull-and-deploy.sh -o /tmp/kakakin-deploy.sh
+sudo bash /tmp/kakakin-deploy.sh
+```
+
+For a private repository, obtain the script from your authenticated checkout and configure a read-only deploy key/verified GitHub host key. Run with `KAKAKIN_REPO_URL=git@github.com:olamidebello/kakakin.git`; also set `kakakin_repo` to that SSH URL through the `--vars` file used for the app checkout. No credentials are embedded in either script.
+
+Options: `--admin-email`, `--panel-owner`, `--domain`, `--branch`, and `--vars`. This bootstrap runs locally; use the SSH Ansible inventory for remote execution.
+
 ## Run on the panel server
 
 Install Ansible if needed, then clone to a bootstrap directory separate from the managed checkout:

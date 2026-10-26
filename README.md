@@ -17,6 +17,8 @@
 
 ## Olamidepanel hosting
 
+Automatic source update and deployment: `sudo bash scripts/pull-and-deploy.sh` on the existing panel server. An explicit playbook entry point is available at `ansible/pull-and-deploy.yml`.
+
 The selected host is the existing Olamidepanel server `154.16.170.86`, with domain `kakakin.africandroid.com`. Use the [Olamidepanel deployment guide](ansible/OLAMIDEPANEL.md) and run `sudo bash scripts/deploy-olamidepanel.sh` locally on that server after cloning this repository. The integration registers the backend domain in the panel inventory after successful HTTPS and app-identity checks.
 
 ## Deploy to your own server with Ansible

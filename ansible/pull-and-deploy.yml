@@ -1,0 +1,5 @@
+---
+# Explicit pull-and-deploy entry point. deploy.yml performs the Git update,
+# builds the selected revision, deploys the container, and verifies HTTPS.
+- name: Pull Kakakin and deploy it on Olamidepanel
+  ansible.builtin.import_playbook: olamidepanel.yml

@@ -27,4 +27,4 @@ PY
 args=()
 if [[ -n "${inventory}" ]]; then args+=(-i "${inventory}"); else args+=(-i 'localhost,' --connection local --extra-vars 'target_hosts=localhost'); fi
 if [[ -n "${extra_vars}" ]]; then args+=(--extra-vars "@${extra_vars}"); fi
-exec ansible-playbook "${args[@]}" "${repo_dir}/ansible/olamidepanel.yml" --extra-vars "${vars_json}"
+exec ansible-playbook "${args[@]}" "${repo_dir}/ansible/pull-and-deploy.yml" --extra-vars "${vars_json}"
