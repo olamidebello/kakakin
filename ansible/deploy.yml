@@ -27,6 +27,10 @@
       - TWILIO_FROM
       - TWILIO_WEBHOOK_URL
   pre_tasks:
+    - name: Use the Kakakin production domain unless explicitly overridden
+      ansible.builtin.set_fact:
+        kakakin_domain: kakakin.africandroid.com
+      when: kakakin_domain is not defined
     - name: Validate required deployment settings
       ansible.builtin.assert:
         that:

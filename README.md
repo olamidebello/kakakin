@@ -20,7 +20,7 @@
 A self-hosted adapter is now included. See [ansible/README.md](ansible/README.md) for setup and operations, [ansible/deploy.yml](ansible/deploy.yml) for the playbook, and [scripts/deploy-server.sh](scripts/deploy-server.sh) for the one-command wrapper.
 
 ```bash
-sudo bash scripts/deploy-server.sh --domain YOUR_REAL_DOMAIN --admin-email YOUR_ADMIN_EMAIL
+sudo bash scripts/deploy-server.sh --domain kakakin.africandroid.com --admin-email YOUR_ADMIN_EMAIL
 ```
 
 The server path uses a Dockerized workerd/Miniflare runtime with persistent local SQLite state, a password/session authentication gateway, an explicit bootstrap administrator email, Nginx, Let's Encrypt, pre-update backups, and a background scheduler independent of web visits. It is a single-server adapter, not managed D1 or a replicated production cluster. The trusted gateway strips client-supplied identity headers before calling the Worker. Never expose the Worker runtime directly.

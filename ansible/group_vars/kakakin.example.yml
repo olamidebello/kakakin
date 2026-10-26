@@ -1,6 +1,6 @@
 ---
 # Copy to ansible/group_vars/kakakin.yml and replace these values.
-kakakin_domain: kakakin.example.com
+kakakin_domain: kakakin.africandroid.com
 kakakin_admin_email: admin@example.com
 kakakin_admin_name: Kakakin Administrator
 kakakin_enable_tls: true
