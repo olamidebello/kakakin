@@ -1,0 +1,326 @@
+---
+- name: Pull and deploy Kakakin on Debian or Ubuntu
+  hosts: "{{ target_hosts | default('kakakin') }}"
+  become: true
+  gather_facts: true
+  serial: 1
+  vars:
+    kakakin_repo: https://github.com/olamidebello/kakakin.git
+    kakakin_version: main
+    kakakin_checkout: /opt/kakakin/source
+    kakakin_data: /var/lib/kakakin
+    kakakin_config: /etc/kakakin
+    kakakin_backups: /var/backups/kakakin
+    kakakin_port: 18770
+    kakakin_enable_tls: true
+    kakakin_admin_name: Kakakin Administrator
+    kakakin_letsencrypt_email: "{{ kakakin_admin_email }}"
+    kakakin_provider_env: {}
+    kakakin_allowed_provider_keys:
+      - WHATSAPP_TOKEN
+      - WHATSAPP_PHONE_ID
+      - WHATSAPP_API_VERSION
+      - META_APP_SECRET
+      - WEBHOOK_VERIFY_TOKEN
+      - TWILIO_ACCOUNT_SID
+      - TWILIO_AUTH_TOKEN
+      - TWILIO_FROM
+      - TWILIO_WEBHOOK_URL
+  pre_tasks:
+    - name: Validate required deployment settings
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family == 'Debian'
+          - kakakin_domain is defined
+          - kakakin_domain is match('^[a-zA-Z0-9][a-zA-Z0-9.-]+[a-zA-Z0-9]$')
+          - not kakakin_domain.endswith('.example.com')
+          - kakakin_domain not in ['example.com', 'example.org', 'example.net']
+          - kakakin_admin_email is defined
+          - kakakin_admin_email is match('^[^@\s]+@[^@\s]+\.[^@\s]+$')
+          - kakakin_port | int > 1024
+          - kakakin_port | int < 65536
+          - kakakin_checkout.startswith('/')
+          - kakakin_data.startswith('/')
+          - kakakin_config.startswith('/')
+          - kakakin_checkout != kakakin_data
+        fail_msg: Set your real domain and administrator email in group_vars/kakakin.yml. Use an unused port; the playbook preserves other sites.
+    - name: Validate provider environment keys and values
+      ansible.builtin.assert:
+        that:
+          - item.key in kakakin_allowed_provider_keys
+          - item.value is string
+          - "'\n' not in (item.value | string)"
+          - "'\r' not in (item.value | string)"
+      loop: "{{ kakakin_provider_env | dict2items }}"
+      no_log: true
+  tasks:
+    - name: Install deployment dependencies
+      ansible.builtin.apt:
+        name: [git, docker.io, nginx, certbot, ca-certificates, python3]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+    - name: Start Docker and Nginx
+      ansible.builtin.service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop: [docker, nginx]
+    - name: Create application directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: "{{ kakakin_checkout }}", owner: root, group: root, mode: '0755'}
+        - {path: "{{ kakakin_data }}", owner: '10001', group: '10001', mode: '0700'}
+        - {path: "{{ kakakin_config }}", owner: '10001', group: '10001', mode: '0700'}
+        - {path: "{{ kakakin_backups }}", owner: root, group: root, mode: '0700'}
+        - {path: /var/www/kakakin-acme, owner: root, group: root, mode: '0755'}
+    - name: Pull the requested repository revision without discarding local changes
+      ansible.builtin.git:
+        repo: "{{ kakakin_repo }}"
+        dest: "{{ kakakin_checkout }}"
+        version: "{{ kakakin_version }}"
+        update: true
+        force: false
+      register: kakakin_git
+    - name: Choose the revision-specific container image
+      ansible.builtin.set_fact:
+        kakakin_image: "kakakin:{{ kakakin_git.after[:12] }}"
+    - name: Check whether the image is already built
+      ansible.builtin.command:
+        argv: [docker, image, inspect, "{{ kakakin_image }}"]
+      register: kakakin_image_check
+      failed_when: false
+      changed_when: false
+    - name: Build the application while the existing container keeps running
+      ansible.builtin.command:
+        argv: [docker, build, --tag, "{{ kakakin_image }}", "{{ kakakin_checkout }}"]
+      when: kakakin_image_check.rc != 0
+      changed_when: true
+    - name: Check for administrator login configuration
+      ansible.builtin.stat:
+        path: "{{ kakakin_config }}/accounts.json"
+      register: kakakin_accounts
+    - name: Ask for the initial administrator password only on first install
+      ansible.builtin.pause:
+        prompt: Enter a new Kakakin administrator password (at least 14 characters)
+        echo: false
+      register: kakakin_password_prompt
+      when: not kakakin_accounts.stat.exists and kakakin_admin_password is not defined
+      no_log: true
+    - name: Validate the initial administrator password
+      ansible.builtin.assert:
+        that:
+          - (kakakin_admin_password | default(kakakin_password_prompt.user_input | default(''))) | length >= 14
+          - (kakakin_admin_password | default(kakakin_password_prompt.user_input | default(''))) | length <= 512
+      when: not kakakin_accounts.stat.exists
+      no_log: true
+    - name: Initialize a scrypt-hashed administrator account through stdin
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --rm
+          - -i
+          - --user
+          - '10001:10001'
+          - --env
+          - ACCOUNTS_FILE=/config/accounts.json
+          - --volume
+          - "{{ kakakin_config }}:/config:rw"
+          - "{{ kakakin_image }}"
+          - node
+          - server/accounts.mjs
+        stdin: "{{ {'email': kakakin_admin_email | lower, 'name': kakakin_admin_name, 'password': kakakin_admin_password | default(kakakin_password_prompt.user_input | default(''))} | to_json }}"
+      when: not kakakin_accounts.stat.exists
+      changed_when: true
+      no_log: true
+    - name: Create a persistent session signing key without printing it
+      ansible.builtin.command:
+        argv: [python3, -c, "import pathlib,secrets,os; p=pathlib.Path(os.environ['KEY_PATH']); fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,secrets.token_hex(48).encode()); os.close(fd)"]
+        creates: "{{ kakakin_config }}/session.key"
+      environment:
+        KEY_PATH: "{{ kakakin_config }}/session.key"
+      no_log: true
+    - name: Load the existing session signing key
+      ansible.builtin.slurp:
+        src: "{{ kakakin_config }}/session.key"
+      register: kakakin_session_key
+      no_log: true
+    - name: Write server-only environment configuration
+      ansible.builtin.template:
+        src: kakakin.env.j2
+        dest: "{{ kakakin_config }}/server.env"
+        owner: root
+        group: root
+        mode: '0600'
+      register: kakakin_environment
+      no_log: true
+    - name: Inspect the existing Kakakin container
+      ansible.builtin.command:
+        argv: [docker, container, inspect, kakakin]
+      register: kakakin_old
+      no_log: true
+      failed_when: false
+      changed_when: false
+    - name: Determine whether application replacement is needed
+      ansible.builtin.set_fact:
+        kakakin_replace: "{{ kakakin_old.rc != 0 or kakakin_environment.changed or (kakakin_old.rc == 0 and ((kakakin_old.stdout | from_json)[0].Config.Image != kakakin_image or (kakakin_old.stdout | from_json)[0].HostConfig.PortBindings.get('18770/tcp', [{}])[0].get('HostPort', '') != (kakakin_port | string))) }}"
+    - name: Deploy and verify the new container
+      when: kakakin_replace | bool
+      block:
+        - name: Stop the existing app before a consistent cold backup
+          ansible.builtin.command:
+            argv: [docker, stop, --time, '600', kakakin]
+          when: kakakin_old.rc == 0
+          changed_when: true
+        - name: Back up persistent state and account configuration before migration
+          ansible.builtin.command:
+            argv: [tar, -czf, "{{ kakakin_backups }}/before-{{ ansible_facts.date_time.iso8601_basic_short }}.tar.gz", "{{ kakakin_data }}", "{{ kakakin_config }}"]
+          changed_when: true
+        - name: Remove only the stopped application container
+          ansible.builtin.command:
+            argv: [docker, rm, kakakin]
+          when: kakakin_old.rc == 0
+          changed_when: true
+        - name: Start the application with persistent volumes and a loopback-only host port
+          ansible.builtin.command:
+            argv:
+              - docker
+              - run
+              - --detach
+              - --name
+              - kakakin
+              - --restart
+              - unless-stopped
+              - --stop-timeout
+              - '600'
+              - --security-opt
+              - no-new-privileges:true
+              - --cap-drop
+              - ALL
+              - --publish
+              - "127.0.0.1:{{ kakakin_port }}:18770"
+              - --env-file
+              - "{{ kakakin_config }}/server.env"
+              - --volume
+              - "{{ kakakin_data }}:/data:rw"
+              - --volume
+              - "{{ kakakin_config }}/accounts.json:/config/accounts.json:ro"
+              - "{{ kakakin_image }}"
+          changed_when: true
+        - name: Wait for the database and gateway to become healthy
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ kakakin_port }}/healthz"
+            status_code: 200
+            return_content: true
+          register: kakakin_health
+          until: kakakin_health.status | default(0) == 200
+          retries: 40
+          delay: 3
+      rescue:
+        - name: Report deployment failure and preserve backup for deliberate recovery
+          ansible.builtin.fail:
+            msg: "Kakakin did not become healthy. Inspect 'docker logs kakakin'. State/account backup is in {{ kakakin_backups }}. No automatic database rollback or message resend was attempted."
+    - name: Ensure an unchanged existing container is running
+      ansible.builtin.command:
+        argv: [docker, start, kakakin]
+      when: not (kakakin_replace | bool)
+      changed_when: false
+    - name: Check for domain conflicts in other Nginx site files
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import pathlib,re,sys
+            domain=sys.argv[1]
+            conflicts=[]
+            for folder in ['/etc/nginx/sites-enabled','/etc/nginx/conf.d']:
+              for p in pathlib.Path(folder).glob('*'):
+                if not p.is_file() or p.resolve()==pathlib.Path('/etc/nginx/sites-available/kakakin.conf'): continue
+                text=re.sub(r'#[^\n]*','',p.read_text(errors='replace'))
+                for names in re.findall(r'\bserver_name\s+([^;]+);',text):
+                  if domain in names.split(): conflicts.append(str(p))
+            if conflicts: sys.exit('Domain already configured elsewhere: '+', '.join(conflicts))
+          - "{{ kakakin_domain }}"
+      changed_when: false
+    - name: Check whether a domain certificate already exists
+      ansible.builtin.stat:
+        path: "/etc/letsencrypt/live/{{ kakakin_domain }}/fullchain.pem"
+      register: kakakin_cert
+    - name: Select the initial Nginx TLS configuration
+      ansible.builtin.set_fact:
+        kakakin_tls_ready: "{{ kakakin_enable_tls and kakakin_cert.stat.exists }}"
+    - name: Install this application's Nginx site
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/sites-available/kakakin.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: true
+    - name: Enable this application's site without removing other sites
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/kakakin.conf
+        dest: /etc/nginx/sites-enabled/kakakin.conf
+        state: link
+    - name: Verify Nginx configuration before reload
+      ansible.builtin.command: nginx -t
+      changed_when: false
+    - name: Reload Nginx for HTTP certificate verification
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+    - name: Obtain the domain's Let's Encrypt certificate after DNS is ready
+      ansible.builtin.command:
+        argv: [certbot, certonly, --webroot, --webroot-path, /var/www/kakakin-acme, --non-interactive, --agree-tos, --email, "{{ kakakin_letsencrypt_email }}", --domain, "{{ kakakin_domain }}"]
+        creates: "/etc/letsencrypt/live/{{ kakakin_domain }}/fullchain.pem"
+      when: kakakin_enable_tls
+    - name: Activate the verified TLS configuration
+      ansible.builtin.set_fact:
+        kakakin_tls_ready: true
+      when: kakakin_enable_tls
+    - name: Enable the HTTPS application configuration
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/sites-available/kakakin.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: true
+      when: kakakin_enable_tls
+    - name: Add certificate-renewal Nginx reload hook
+      ansible.builtin.copy:
+        dest: /etc/letsencrypt/renewal-hooks/deploy/kakakin-nginx
+        content: "#!/bin/sh\nnginx -t && systemctl reload nginx\n"
+        owner: root
+        group: root
+        mode: '0755'
+      when: kakakin_enable_tls
+    - name: Enable Certbot's automatic renewal timer
+      ansible.builtin.systemd_service:
+        name: certbot.timer
+        enabled: true
+        state: started
+      when: kakakin_enable_tls
+    - name: Validate final Nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+    - name: Reload the final application configuration
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+    - name: Verify the application through Nginx and the configured domain
+      ansible.builtin.uri:
+        url: "{{ 'https' if kakakin_enable_tls else 'http' }}://{{ kakakin_domain }}/healthz"
+        status_code: 200
+        validate_certs: true
+      register: kakakin_public_health
+    - name: Show the verified deployment URL
+      ansible.builtin.debug:
+        msg: "Kakakin ready at {{ 'https' if kakakin_enable_tls else 'http' }}://{{ kakakin_domain }} — administrator: {{ kakakin_admin_email }}. Existing provider credentials and consent checks still apply."

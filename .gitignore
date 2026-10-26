@@ -46,3 +46,8 @@ yarn-error.log*
 
 # Keep the documented empty secret template.
 !.env.example
+
+# Private deployment inventory and operator variables
+/ansible/inventory.ini
+/ansible/group_vars/kakakin.yml
+/ansible/*vault*

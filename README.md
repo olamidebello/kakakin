@@ -15,11 +15,21 @@
 - Team access by email, tenant switching, tenant suspension, platform user suspension and role administration, audit exports, and provider configuration status.
 - Web app manifest and app icons for browser installation. Native Android/iOS packages are not included.
 
+## Deploy to your own server with Ansible
+
+A self-hosted adapter is now included. See [ansible/README.md](ansible/README.md) for setup and operations, [ansible/deploy.yml](ansible/deploy.yml) for the playbook, and [scripts/deploy-server.sh](scripts/deploy-server.sh) for the one-command wrapper.
+
+```bash
+sudo bash scripts/deploy-server.sh --domain YOUR_REAL_DOMAIN --admin-email YOUR_ADMIN_EMAIL
+```
+
+The server path uses a Dockerized workerd/Miniflare runtime with persistent local SQLite state, a password/session authentication gateway, an explicit bootstrap administrator email, Nginx, Let's Encrypt, pre-update backups, and a background scheduler independent of web visits. It is a single-server adapter, not managed D1 or a replicated production cluster. The trusted gateway strips client-supplied identity headers before calling the Worker. Never expose the Worker runtime directly.
+
 ## Hosting and identity
 
 The project is prepared for **ChatGPT Sites / Cloudflare Workers**, using the Vinext starter and its `sites()` build integration. `.openai/hosting.json` identifies the existing Site and D1 binding. Hosted authentication is supplied by Sites. The owner-private deployment grants the first authenticated owner super administrator access; later users require email-based membership.
 
-**Do not expose the Worker directly without the trusted Sites authentication boundary.** Identity headers must be inserted by the trusted gateway and stripped from untrusted inbound traffic. This is not a standalone password-authenticated VPS app.
+**Do not expose the Worker directly without the trusted Sites authentication boundary.** Identity headers must be inserted by the trusted gateway and stripped from untrusted inbound traffic. The unwrapped Worker does not implement password authentication; the self-hosted adapter above supplies it.
 
 The current Site starts private. Public provider callbacks and referral traffic need a supported public hosting/access configuration. Do not switch audience without explicitly reviewing access and bootstrap behavior. If adapting to another host, implement trusted authentication and an explicit bootstrap administrator allowlist before public launch.
 
@@ -58,7 +68,7 @@ Callback signatures use HMAC-SHA256 for Meta and Twilio's classic HMAC-SHA1 vali
 
 ## Scheduling
 
-`worker/index.ts` exports a `scheduled` handler, and `vite.config.ts` declares a five-minute cron. The built Wrangler metadata carries that trigger. The handler selects due, explicitly authorized campaigns for active tenants and dispatches them through the same consent, pause, provider, and rate checks. A live scheduled campaign requires typing `SEND` when saving and enabling workspace live delivery. Platform publication may not activate cron triggers: verify the host's scheduler before relying on unattended delivery. Until verified, the GUI supports manual dispatch after the due time. This release does not claim a hosted scheduler execution has been observed.
+`worker/index.ts` exports a `scheduled` handler, and `vite.config.ts` declares a five-minute cron. The built Wrangler metadata carries that trigger. The handler selects due, explicitly authorized campaigns for active tenants and dispatches them through the same consent, pause, provider, and rate checks. A live scheduled campaign requires typing `SEND` when saving and enabling workspace live delivery. Platform publication may not activate cron triggers: verify the host's scheduler before relying on unattended delivery. Until verified, the GUI supports manual dispatch after the due time. Hosted Cloudflare cron execution has not been observed. The self-hosted gateway scheduler is separately exercised by its integration test.
 
 Dispatch leases serialize tenant sends and expire after 15 minutes. A process termination after a provider accepts a message can leave a campaign in `sending`; investigate provider records before a manual database repair. Do not automatically retry an ambiguous send, as this can duplicate messages.
 
@@ -68,6 +78,8 @@ Dispatch leases serialize tenant sends and expire after 15 minutes. A process te
 node node_modules/typescript/bin/tsc --noEmit
 npm run build
 node tests/integration.mjs
+node tests/server-auth.mjs
+node tests/server-gateway.mjs
 ```
 
 The integration script uses the managed pnpm Miniflare dependency to load the actual built Worker and an isolated ephemeral D1 database. It verifies authorization, tenant separation, consent evidence, duplicate prevention, sandbox ledger persistence, referral validation, pending referral verification, and fail-closed live delivery. No external messages are sent. Adjust the Miniflare import path if installing dependencies using another package manager.

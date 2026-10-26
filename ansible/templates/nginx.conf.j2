@@ -1,0 +1,45 @@
+# Managed by Kakakin Ansible. Other domains and the default site are preserved.
+limit_req_zone $binary_remote_addr zone=kakakin_login:10m rate=6r/m;
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ kakakin_domain }};
+    client_max_body_size 1m;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/kakakin-acme; }
+{% if kakakin_tls_ready | default(false) %}
+    location / { return 301 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name {{ kakakin_domain }};
+    ssl_certificate /etc/letsencrypt/live/{{ kakakin_domain }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ kakakin_domain }}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 1m;
+{% endif %}
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    location = /signin-with-chatgpt {
+        limit_req zone=kakakin_login burst=10 nodelay;
+        proxy_pass http://127.0.0.1:{{ kakakin_port }};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Oai-Authenticated-User-Id "";
+        proxy_set_header Oai-Authenticated-User-Email "";
+        proxy_read_timeout 600s;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:{{ kakakin_port }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Oai-Authenticated-User-Id "";
+        proxy_set_header Oai-Authenticated-User-Email "";
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_buffering off;
+    }
+}

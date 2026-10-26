@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';
+import {passwordHash,verifyPassword,signSession,verifySession,safeReturn,identity} from '../server/auth.mjs';
+const hash=passwordHash('A-long-test-password-123');assert.ok(!hash.includes('A-long-test-password-123'));assert.ok(verifyPassword('A-long-test-password-123',hash));assert.ok(!verifyPassword('incorrect',hash));assert.throws(()=>passwordHash('short'));
+const account={email:'owner@example.test',version:1};const token=signSession(account,'s'.repeat(64));assert.equal(verifySession(token,'s'.repeat(64)).email,account.email);assert.equal(verifySession(token+'tampered','s'.repeat(64)),null);assert.equal(verifySession(token,'x'.repeat(64)),null);
+for(const target of ['//attacker.test','https://attacker.test','/\\attacker','/\r\nLocation:evil'])assert.equal(safeReturn(target),'/');assert.equal(safeReturn('/?campaign=one'),'/?campaign=one');assert.equal(identity('OWNER@example.test'),identity('owner@example.test'));console.log('Server password, signed session, tamper, identity, and redirect checks passed.');

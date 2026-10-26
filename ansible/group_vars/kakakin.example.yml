@@ -1,0 +1,26 @@
+---
+# Copy to ansible/group_vars/kakakin.yml and replace these values.
+kakakin_domain: kakakin.example.com
+kakakin_admin_email: admin@example.com
+kakakin_admin_name: Kakakin Administrator
+kakakin_enable_tls: true
+kakakin_letsencrypt_email: admin@example.com
+# Optional: use an Ansible Vault encrypted vars file for provider credentials.
+kakakin_provider_env: {}
+#  WHATSAPP_TOKEN: your-secret-token
+#  WHATSAPP_PHONE_ID: your-meta-phone-id
+#  WHATSAPP_API_VERSION: your-meta-api-version
+#  META_APP_SECRET: your-meta-app-secret
+#  WEBHOOK_VERIFY_TOKEN: your-chosen-verification-token
+#  TWILIO_ACCOUNT_SID: your-account-sid
+#  TWILIO_AUTH_TOKEN: your-auth-token
+#  TWILIO_FROM: your-approved-E164-sender
+# Existing servers: choose an unused loopback port.
+kakakin_port: 18770
+kakakin_repo: https://github.com/olamidebello/kakakin.git
+kakakin_version: main
+kakakin_checkout: /opt/kakakin/source
+kakakin_data: /var/lib/kakakin
+kakakin_config: /etc/kakakin
+kakakin_backups: /var/backups/kakakin
+# Enable for Docker container startup on host reboot. No unattended Git updates.
