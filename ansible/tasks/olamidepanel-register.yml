@@ -1,0 +1,30 @@
+---
+- name: Register the verified backend in the panel's domain inventory
+  ansible.builtin.command:
+    argv:
+      - "{{ kakakin_panel_root | default('/opt/olamidepanel') }}/venv/bin/python"
+      - "{{ playbook_dir }}/../server/olamidepanel-register.py"
+      - --panel-root
+      - "{{ kakakin_panel_root | default('/opt/olamidepanel') }}"
+    stdin: "{{ {'domain': kakakin_domain, 'owner': kakakin_panel_account.owner, 'mode': 'register'} | to_json }}"
+  register: kakakin_panel_registration
+  changed_when: (kakakin_panel_registration.stdout | from_json).changed
+- name: Create the operator application manifest directory
+  ansible.builtin.file:
+    path: /etc/olamidepanel/apps
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+- name: Record the backend's source, route, container and health endpoint
+  ansible.builtin.copy:
+    dest: /etc/olamidepanel/apps/kakakin.json
+    owner: root
+    group: root
+    mode: '0640'
+    content: >-
+      {{ {'name': 'Kakakin', 'domain': kakakin_domain, 'url': ('https' if kakakin_enable_tls else 'http') + '://' + kakakin_domain,
+      'repository': kakakin_repo, 'revision': kakakin_git.after, 'container': 'kakakin',
+      'port': kakakin_port, 'health_path': '/healthz', 'owner': kakakin_panel_account.owner,
+      'database': 'application-local persistent SQLite; panel inventory uses existing MySQL',
+      'verified': true} | to_nice_json }}

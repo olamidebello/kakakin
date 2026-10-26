@@ -51,3 +51,7 @@ yarn-error.log*
 /ansible/inventory.ini
 /ansible/group_vars/kakakin.yml
 /ansible/*vault*
+
+# Python integration/test bytecode
+__pycache__/
+*.pyc

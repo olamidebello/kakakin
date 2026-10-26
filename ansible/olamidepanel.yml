@@ -1,0 +1,6 @@
+---
+# Run locally on the existing Olamidepanel server, or use an explicit SSH inventory.
+- name: Deploy Kakakin on the existing Olamidepanel host
+  ansible.builtin.import_playbook: deploy.yml
+  vars:
+    kakakin_olamidepanel: true

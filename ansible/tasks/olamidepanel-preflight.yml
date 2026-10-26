@@ -1,0 +1,40 @@
+---
+- name: Verify the existing Olamidepanel installation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/olamidepanel/database.json
+    - "{{ kakakin_panel_root | default('/opt/olamidepanel') }}/panel/database.py"
+    - "{{ kakakin_panel_root | default('/opt/olamidepanel') }}/venv/bin/python"
+  register: kakakin_panel_files
+- name: Require the panel database, adapter, and Python environment
+  ansible.builtin.assert:
+    that:
+      - kakakin_panel_files.results | map(attribute='stat.exists') | min
+    fail_msg: Run this deployment on the existing Olamidepanel host after panel installation. It does not install or replace Olamidepanel.
+- name: Inspect domain ownership and derive the panel account's contact email
+  ansible.builtin.command:
+    argv:
+      - "{{ kakakin_panel_root | default('/opt/olamidepanel') }}/venv/bin/python"
+      - "{{ playbook_dir }}/../server/olamidepanel-register.py"
+      - --panel-root
+      - "{{ kakakin_panel_root | default('/opt/olamidepanel') }}"
+    stdin: "{{ {'domain': kakakin_domain, 'owner': kakakin_panel_owner | default(''), 'mode': 'inspect'} | to_json }}"
+  register: kakakin_panel_inspect
+  changed_when: false
+- name: Retain the resolved panel account
+  ansible.builtin.set_fact:
+    kakakin_panel_account: "{{ kakakin_panel_inspect.stdout | from_json }}"
+- name: Use the existing panel account email for initial Kakakin login unless overridden
+  ansible.builtin.set_fact:
+    kakakin_admin_email: "{{ kakakin_panel_account.email }}"
+  when: kakakin_admin_email is not defined
+- name: Ask locally for an initial login email if the panel account has none
+  ansible.builtin.pause:
+    prompt: Enter the email for the initial Kakakin administrator login
+  register: kakakin_panel_email_prompt
+  when: not (kakakin_admin_email | default('') is match('^[^@\s]+@[^@\s]+\.[^@\s]+$'))
+- name: Retain the entered initial login email
+  ansible.builtin.set_fact:
+    kakakin_admin_email: "{{ kakakin_panel_email_prompt.user_input | trim }}"
+  when: not (kakakin_admin_email | default('') is match('^[^@\s]+@[^@\s]+\.[^@\s]+$'))

@@ -2,6 +2,8 @@
 
 This playbook pulls `https://github.com/olamidebello/kakakin.git`, builds the chosen revision, and runs Kakakin on one Debian/Ubuntu server. It does not deploy to Cloudflare or upload source to ChatGPT Sites.
 
+For the existing Olamidepanel host, use [OLAMIDEPANEL.md](OLAMIDEPANEL.md) and `scripts/deploy-olamidepanel.sh`. The general server playbook below does not register panel inventory.
+
 ## Production domain
 
 The deployment default is **kakakin.africandroid.com**. The wrapper also accepts `--domain` or `KAKAKIN_DOMAIN` for an explicit override.

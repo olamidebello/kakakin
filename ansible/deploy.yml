@@ -31,6 +31,9 @@
       ansible.builtin.set_fact:
         kakakin_domain: kakakin.africandroid.com
       when: kakakin_domain is not defined
+    - name: Prepare the existing panel integration
+      ansible.builtin.include_tasks: tasks/olamidepanel-preflight.yml
+      when: kakakin_olamidepanel | default(false) | bool
     - name: Validate required deployment settings
       ansible.builtin.assert:
         that:
@@ -223,7 +226,7 @@
             status_code: 200
             return_content: true
           register: kakakin_health
-          until: kakakin_health.status | default(0) == 200
+          until: kakakin_health.status | default(0) == 200 and kakakin_health.json.service | default('') == 'kakakin'
           retries: 40
           delay: 3
       rescue:
@@ -325,6 +328,15 @@
         status_code: 200
         validate_certs: true
       register: kakakin_public_health
+    - name: Verify the public domain serves the Kakakin backend
+      ansible.builtin.assert:
+        that:
+          - kakakin_public_health.json.service | default('') == 'kakakin'
+          - kakakin_public_health.json.database | default('') == 'ready'
+        fail_msg: The domain did not reach the expected Kakakin backend. Check DNS and Nginx routing before registering the app.
+    - name: Register the verified app with Olamidepanel
+      ansible.builtin.include_tasks: tasks/olamidepanel-register.yml
+      when: kakakin_olamidepanel | default(false) | bool
     - name: Show the verified deployment URL
       ansible.builtin.debug:
         msg: "Kakakin ready at {{ 'https' if kakakin_enable_tls else 'http' }}://{{ kakakin_domain }} — administrator: {{ kakakin_admin_email }}. Existing provider credentials and consent checks still apply."

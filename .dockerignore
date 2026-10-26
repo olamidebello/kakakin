@@ -16,3 +16,6 @@ ansible/*vault*
 accounts.json
 server.env
 *.tar.gz
+
+__pycache__
+*.pyc

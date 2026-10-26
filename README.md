@@ -15,6 +15,10 @@
 - Team access by email, tenant switching, tenant suspension, platform user suspension and role administration, audit exports, and provider configuration status.
 - Web app manifest and app icons for browser installation. Native Android/iOS packages are not included.
 
+## Olamidepanel hosting
+
+The selected host is the existing Olamidepanel server `154.16.170.86`, with domain `kakakin.africandroid.com`. Use the [Olamidepanel deployment guide](ansible/OLAMIDEPANEL.md) and run `sudo bash scripts/deploy-olamidepanel.sh` locally on that server after cloning this repository. The integration registers the backend domain in the panel inventory after successful HTTPS and app-identity checks.
+
 ## Deploy to your own server with Ansible
 
 A self-hosted adapter is now included. See [ansible/README.md](ansible/README.md) for setup and operations, [ansible/deploy.yml](ansible/deploy.yml) for the playbook, and [scripts/deploy-server.sh](scripts/deploy-server.sh) for the one-command wrapper.
