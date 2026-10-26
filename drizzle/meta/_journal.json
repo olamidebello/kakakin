@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1792991478940,
+      "tag": "0000_reflective_loa",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792991669120,
+      "tag": "0001_unique_rocket_racer",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792991805579,
+      "tag": "0002_wandering_the_order",
+      "breakpoints": true
+    }
+  ]
+}
